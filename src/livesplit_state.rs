@@ -71,7 +71,7 @@ impl LivesplitState {
 
         livesplit_core::run::saver::livesplit::save_timer(&timer, &mut s)?;
 
-        File::create(path)?.write(s.as_bytes())?;
+        File::create(path)?.write_all(s.as_bytes())?;
 
         Ok(())
     }
