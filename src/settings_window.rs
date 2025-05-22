@@ -97,7 +97,6 @@ pub fn view<'a>(app: &'a App) -> iced::Element<'a, Message> {
                                     }),
                                 iced::widget::button("Clear").on_press(Message::ClearHotkey(index))
                             ]
-                            .into()
                         })
                         .collect(),
                 )

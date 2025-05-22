@@ -99,7 +99,7 @@ impl App {
                     "Next Comparison",
                     "Toggle Timing Method",
                 ]
-                .map(|label| HotkeyBox::new(label)),
+                .map(HotkeyBox::new),
                 hotkey_focused: None,
             },
             window_open_task.discard(),
@@ -316,8 +316,8 @@ impl App {
         Subscription::batch([
             iced::time::every(Duration::from_secs_f64(1. / 60.)).map(|_| Message::TimerTick),
             window::resize_events().map(|x| Message::WindowResized(x.0, x.1)),
-            window::close_requests().map(|id| Message::CloseRequested(id)),
-            window::close_events().map(|id| Message::WindowClosed(id)),
+            window::close_requests().map(Message::CloseRequested),
+            window::close_events().map(Message::WindowClosed),
             event::listen_with(key_press_event_listener),
         ])
     }
@@ -374,7 +374,7 @@ impl App {
                     _ => unreachable!(),
                 }
             })
-            .and_then(|a| Task::done(a))
+            .and_then(Task::done)
         } else {
             Task::none()
         }

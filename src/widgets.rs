@@ -112,7 +112,7 @@ where
         if focused_before != focused_after {
             shell.publish((self.f)(focused_after));
         }
-        return res;
+        res
     }
 
     fn size_hint(&self) -> iced::Size<iced::Length> {

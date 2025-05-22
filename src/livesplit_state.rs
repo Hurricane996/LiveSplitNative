@@ -51,7 +51,7 @@ impl LivesplitState {
     pub fn load_splits(&self, path: &Path) -> Result<(), LoadSplitsError> {
         let mut timer = self.timer.write().unwrap();
         if !timer.current_phase().is_running() && !timer.current_phase().is_paused() {
-            let run_bytes = fs::read(&path)?;
+            let run_bytes = fs::read(path)?;
             let run = composite::parse_and_fix(&run_bytes, path.parent()).unwrap();
             timer
                 .replace_run(run.run, true)
@@ -140,11 +140,11 @@ impl LivesplitState {
         };
         settings.splits_path.as_ref().inspect(|path| {
             //
-            me.load_splits(&path).ok();
-            me.load_splits(&path).ok();
+            me.load_splits(path).ok();
+            me.load_splits(path).ok();
         });
         settings.layout_path.as_ref().inspect(|path| {
-            me.load_layout(&path).ok();
+            me.load_layout(path).ok();
         });
 
         me
