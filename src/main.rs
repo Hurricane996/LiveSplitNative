@@ -4,15 +4,17 @@ use app_settings::Settings;
 use hotkeys::iced_key_to_livesplit_hotkey;
 use iced::{Event, Size, Subscription, Task, Theme, event, keyboard, window};
 
+use livesplit_core::{HotkeyConfig, hotkey::Hotkey};
 use livesplit_state::LivesplitState;
 use rfd::{AsyncMessageDialog, MessageDialogResult};
-use settings_window::HotkeyBox;
+use state::splits_editor::{self, SplitsEditorState};
+use ui::{edit_splits_window, main_window, settings_window};
 
 mod app_settings;
 mod hotkeys;
 mod livesplit_state;
-mod main_window;
-mod settings_window;
+mod state;
+mod ui;
 mod widgets;
 
 fn main() -> Result<(), iced::Error> {
@@ -51,23 +53,95 @@ enum Message {
     TryLoadLayout,
     LoadLayout(PathBuf),
     CloseRequested(window::Id),
+    OpenEditSplitsWindow,
+
+    SplitsEditorMessage(splits_editor::Message),
+}
+
+pub struct HotkeyBox {
+    label: &'static str,
+    pub value: Option<Hotkey>,
+}
+
+impl HotkeyBox {
+    pub const fn new(label: &'static str) -> Self {
+        Self { label, value: None }
+    }
+}
+
+pub const fn load_hotkeys_from_hks(livesplit_state: &LivesplitState, hotkeys: &mut [HotkeyBox; 9]) {
+    let config = livesplit_state.hks.config();
+
+    hotkeys[0].value = config.split;
+    hotkeys[1].value = config.reset;
+    hotkeys[2].value = config.undo;
+    hotkeys[3].value = config.skip;
+    hotkeys[4].value = config.pause;
+    hotkeys[5].value = config.undo_all_pauses;
+    hotkeys[6].value = config.previous_comparison;
+    hotkeys[7].value = config.next_comparison;
+    hotkeys[8].value = config.toggle_timing_method;
+}
+
+pub fn save_hotkeys_to_hks(livesplit_state: &mut LivesplitState, hotkeys: &[HotkeyBox; 9]) {
+    let mut config = livesplit_state.hks.config();
+
+    config.split = hotkeys[0].value;
+    config.reset = hotkeys[1].value;
+    config.undo = hotkeys[2].value;
+    config.skip = hotkeys[3].value;
+    config.pause = hotkeys[4].value;
+    config.undo_all_pauses = hotkeys[5].value;
+    config.previous_comparison = hotkeys[6].value;
+    config.next_comparison = hotkeys[7].value;
+    config.toggle_timing_method = hotkeys[8].value;
+
+    // first clear the config so that we don't get false duplicate errors
+
+    livesplit_state
+        .hks
+        .set_config(HotkeyConfig {
+            split: None,
+            reset: None,
+            undo: None,
+            skip: None,
+            pause: None,
+            undo_all_pauses: None,
+            previous_comparison: None,
+            next_comparison: None,
+            toggle_timing_method: None,
+        })
+        .expect("Failed to save config");
+
+    livesplit_state
+        .hks
+        .set_config(config)
+        .expect("Failed to save config");
 }
 
 struct App {
     main_window: window::Id,
     settings_window: Option<window::Id>,
+    edit_splits_window: Option<window::Id>,
 
-    app_settings: Settings,
+    settings: Settings,
 
     main_window_width: u32,
     main_window_height: u32,
 
     livesplit_state: LivesplitState,
 
+    splits_editor_state: SplitsEditorState,
+
     hotkeys: [HotkeyBox; 9],
     hotkey_focused: Option<usize>,
 }
-
+enum WindowType {
+    Main,
+    Settings,
+    EditSplits,
+    Untracked,
+}
 impl App {
     pub fn new() -> (Self, Task<Message>) {
         // let mut windows = BTreeMap::default();
@@ -83,10 +157,12 @@ impl App {
             Self {
                 main_window,
                 settings_window: None,
+                edit_splits_window: None,
                 main_window_width: 0,
                 main_window_height: 0,
                 livesplit_state: LivesplitState::with_settings(&settings),
-                app_settings: settings,
+                splits_editor_state: SplitsEditorState::default(),
+                settings,
 
                 hotkeys: [
                     "Start/Split",
@@ -106,12 +182,11 @@ impl App {
         )
     }
     pub fn view(&self, window: window::Id) -> iced::Element<'_, Message, Theme> {
-        if window == self.main_window {
-            main_window::view(self)
-        } else if self.settings_window == Some(window) {
-            settings_window::view(self)
-        } else {
-            panic!("Tried to view untracked window")
+        match self.identify_window(window) {
+            WindowType::Main => main_window::view(self),
+            WindowType::Settings => settings_window::view(self),
+            WindowType::EditSplits => edit_splits_window::view(self),
+            WindowType::Untracked => panic!("Tried to view untracked window"),
         }
     }
 
@@ -127,7 +202,19 @@ impl App {
                     self.main_window_height = size.height as u32;
                 }
                 self.livesplit_state
-                    .update(self.main_window_width, self.main_window_height)
+                    .update(self.main_window_width, self.main_window_height);
+            }
+            Message::OpenEditSplitsWindow => {
+                let (id, window_task) = window::open(window::Settings::default());
+
+                self.edit_splits_window = Some(id);
+
+                self.livesplit_state.disable_hotkeys();
+
+                self.splits_editor_state
+                    .open_window(&mut self.livesplit_state);
+
+                return window_task.discard();
             }
             Message::OpenSettingsWindow => {
                 let (id, window_task) = window::open(window::Settings::default());
@@ -136,29 +223,35 @@ impl App {
 
                 self.livesplit_state.disable_hotkeys();
 
-                settings_window::load_hotkeys_from_hks(&self.livesplit_state, &mut self.hotkeys);
+                load_hotkeys_from_hks(&self.livesplit_state, &mut self.hotkeys);
                 return window_task.discard();
             }
             Message::DiscardHotkeys => {
-                settings_window::load_hotkeys_from_hks(&self.livesplit_state, &mut self.hotkeys);
+                load_hotkeys_from_hks(&self.livesplit_state, &mut self.hotkeys);
             }
             Message::SaveHotkeys => {
-                settings_window::save_hotkeys_to_hks(&mut self.livesplit_state, &self.hotkeys);
+                save_hotkeys_to_hks(&mut self.livesplit_state, &self.hotkeys);
                 self.livesplit_state
-                    .save_hotkeys_to_settings(&mut self.app_settings);
+                    .save_hotkeys_to_settings(&mut self.settings);
             }
-            Message::WindowClosed(window) => {
-                if window == self.main_window {
-                    self.app_settings.save();
+            Message::WindowClosed(window) => match self.identify_window(window) {
+                WindowType::Main => {
+                    self.settings.save();
                     return iced::exit();
-                } else if self.settings_window == Some(window) {
+                }
+                WindowType::Settings => {
                     self.settings_window = None;
                     self.hotkey_focused = None;
                     self.livesplit_state.enable_hotkeys();
-                } else {
-                    panic!("Tried to close untracked window")
                 }
-            }
+                WindowType::EditSplits => {
+                    self.edit_splits_window = None;
+
+                    self.splits_editor_state
+                        .close_window(&mut self.livesplit_state);
+                }
+                WindowType::Untracked => panic!("Tried to close untracked window"),
+            },
             Message::KeyEvent(id, evt) => {
                 if let keyboard::Event::KeyPressed {
                     physical_key,
@@ -170,16 +263,16 @@ impl App {
                         // todo filter on focus
                         self.hotkey_focused.inspect(|f| {
                             self.hotkeys[*f].value =
-                                iced_key_to_livesplit_hotkey(physical_key, modifiers)
+                                iced_key_to_livesplit_hotkey(physical_key, modifiers);
                         });
                     }
                 }
             }
             Message::HotkeyBoxChangedFocus(id, focus) => {
                 if focus {
-                    self.hotkey_focused = Some(id)
+                    self.hotkey_focused = Some(id);
                 } else if self.hotkey_focused.is_some_and(|new_id| new_id == id) {
-                    self.hotkey_focused = None
+                    self.hotkey_focused = None;
                 }
             }
             Message::ClearHotkey(id) => {
@@ -206,9 +299,8 @@ impl App {
                             .show(),
                     )
                     .discard();
-                } else {
-                    self.app_settings.splits_path.replace(path);
                 }
+                self.settings.splits_path.replace(path);
             }
             Message::TrySaveSplits => {
                 return Task::future(Self::get_save_splits_path(None));
@@ -252,13 +344,11 @@ impl App {
                             .show(),
                     )
                     .discard();
-                } else {
-                    self.app_settings.layout_path.replace(path)
-                };
+                }
+                self.settings.layout_path.replace(path);
             }
-            //
             Message::CloseRequested(window) => {
-                if window == self.main_window {
+                if let WindowType::Main = self.identify_window(window) {
                     let (close_window_task, ct) = window::close::<Message>(window).abortable();
 
                     let save_if_dirty_task = self.save_if_dirty(ct);
@@ -270,45 +360,55 @@ impl App {
 
                     let timer_running_task = if self.livesplit_state.is_timer_mid_run() {
                         Task::future(async move {
-                            if let MessageDialogResult::No = AsyncMessageDialog::new()
-                                .set_buttons(rfd::MessageButtons::YesNo)
-                                .set_title("Quit?")
-                                .set_description(
-                                    "The timer is currently running. Are you sure you want to quit?",
-                                )
-                                .show()
-                                .await
-                            {
-                                    ct.abort();
-                            }
-                        }).discard()
+                                    if  MessageDialogResult::No == AsyncMessageDialog::new()
+                                        .set_buttons(rfd::MessageButtons::YesNo)
+                                        .set_title("Quit?")
+                                        .set_description(
+                                            "The timer is currently running. Are you sure you want to quit?",
+                                        )
+                                        .show()
+                                        .await
+                                    {
+                                            ct.abort();
+                                    }
+                                }).discard()
                     } else {
                         Task::none()
                     };
 
                     return timer_running_task.chain(middle_task);
-                } else if self.settings_window == Some(window) {
-                    return window::close::<Message>(window);
-                } else {
-                    panic!("Tried to close untracked window")
                 }
+
+                panic!("Tried to close untracked window")
             }
+            Message::SplitsEditorMessage(message) => self.splits_editor_state.update(message),
         }
 
         Task::none()
     }
 
-    pub fn theme(&self, _: window::Id) -> Theme {
+    pub const fn theme(&self, _: window::Id) -> Theme {
         Theme::Dark
     }
 
     pub fn title(&self, window: window::Id) -> String {
+        match self.identify_window(window) {
+            WindowType::Main => "LiveSplit".into(),
+            WindowType::Settings => "Settings | LiveSplit".into(),
+            WindowType::EditSplits => "Edit Splits | LiveSplit".into(),
+            WindowType::Untracked => panic!("Tried to get title of untracked window"),
+        }
+    }
+
+    pub fn identify_window(&self, window: window::Id) -> WindowType {
         if window == self.main_window {
-            "LiveSplit".into()
+            WindowType::Main
         } else if self.settings_window == Some(window) {
-            "Settings | LiveSplit".into()
+            WindowType::Settings
+        } else if self.edit_splits_window == Some(window) {
+            WindowType::EditSplits
         } else {
-            panic!("Tried to get title of untracked window")
+            WindowType::Untracked
         }
     }
 
@@ -347,13 +447,13 @@ impl App {
             None => {
                 if let Some(ct) = ct {
                     ct.abort();
-                };
+                }
                 Message::None
             }
         }
     }
 
-    fn save_if_dirty(&mut self, ct: iced::task::Handle) -> Task<Message> {
+    fn save_if_dirty(&self, ct: iced::task::Handle) -> Task<Message> {
         if self.livesplit_state.is_dirty() {
             Task::future(async {
                 match AsyncMessageDialog::new()

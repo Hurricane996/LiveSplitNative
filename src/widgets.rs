@@ -35,12 +35,12 @@ where
     Message: Clone,
     F: Fn(bool) -> Message,
 {
-    pub fn new(content: iced::widget::TextInput<'a, Message, Theme, Renderer>, f: F) -> Self {
+    pub const fn new(content: iced::widget::TextInput<'a, Message, Theme, Renderer>, f: F) -> Self {
         Self { content, f }
     }
 }
-impl<'a, Message, Theme, Renderer, F> iced::advanced::Widget<Message, Theme, Renderer>
-    for TextInputFocalWrapper<'a, Message, Theme, Renderer, F>
+impl<Message, Theme, Renderer, F> iced::advanced::Widget<Message, Theme, Renderer>
+    for TextInputFocalWrapper<'_, Message, Theme, Renderer, F>
 where
     Theme: iced::widget::text_input::Catalog,
     Renderer: iced::advanced::text::Renderer,
@@ -79,7 +79,7 @@ where
             layout,
             cursor,
             viewport,
-        )
+        );
     }
 
     fn on_event(
@@ -131,8 +131,8 @@ where
         iced::advanced::widget::Widget::children(&self.content)
     }
 
-    fn diff(&self, _tree: &mut iced::advanced::widget::Tree) {
-        iced::advanced::widget::Widget::diff(&self.content, _tree)
+    fn diff(&self, tree: &mut iced::advanced::widget::Tree) {
+        iced::advanced::widget::Widget::diff(&self.content, tree);
     }
 
     fn operate(
@@ -142,7 +142,7 @@ where
         renderer: &Renderer,
         operation: &mut dyn iced::advanced::widget::Operation,
     ) {
-        iced::advanced::widget::Widget::operate(&self.content, state, layout, renderer, operation)
+        iced::advanced::widget::Widget::operate(&self.content, state, layout, renderer, operation);
     }
 
     fn mouse_interaction(
@@ -165,7 +165,7 @@ where
 }
 
 fn is_focused<Renderer: iced::advanced::text::Renderer>(
-    tree: &mut iced::advanced::widget::Tree,
+    tree: &iced::advanced::widget::Tree,
 ) -> bool {
     let state = tree
         .state

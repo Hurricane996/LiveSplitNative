@@ -6,7 +6,7 @@ use iced::{
 
 use crate::{App, Message};
 
-pub fn view<'a>(app: &'a App) -> iced::Element<'a, Message> {
+pub fn view(app: &App) -> iced::Element<'_, Message> {
     let (width, height) = app.livesplit_state.last_rendered_size();
     // TODO figure out how to avoid this clone
     let im = iced::widget::image(image::Handle::from_rgba(
@@ -36,6 +36,10 @@ pub fn view<'a>(app: &'a App) -> iced::Element<'a, Message> {
                 .width(Length::Fill),
             iced::widget::button("Save Splits")
                 .on_press(Message::TrySaveSplits)
+                .style(style)
+                .width(Length::Fill),
+            iced::widget::button("EditSplits")
+                .on_press(Message::OpenEditSplitsWindow)
                 .style(style)
                 .width(Length::Fill),
             iced::widget::button("Load Layout")

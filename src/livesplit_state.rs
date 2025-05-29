@@ -16,7 +16,7 @@ use thiserror::Error;
 pub struct LivesplitState {
     pub renderer: Renderer,
     layout: Layout,
-    timer: SharedTimer,
+    pub(crate) timer: SharedTimer,
     layout_state: LayoutState,
     pub hks: HotkeySystem,
 
@@ -30,7 +30,7 @@ impl LivesplitState {
     }
 
     // necessary because otherwise we will get ugly tearing during resize
-    pub fn last_rendered_size(&self) -> (u32, u32) {
+    pub const fn last_rendered_size(&self) -> (u32, u32) {
         (self.last_rendered_width, self.last_rendered_height)
     }
 
@@ -71,6 +71,8 @@ impl LivesplitState {
 
         livesplit_core::run::saver::livesplit::save_timer(&timer, &mut s)?;
 
+        drop(timer);
+
         File::create(path)?.write_all(s.as_bytes())?;
 
         Ok(())
@@ -84,15 +86,14 @@ impl LivesplitState {
         let mut reader = BufReader::new(File::open(path)?);
         let settings = LayoutSettings::from_json(&mut reader);
 
-        let layout = match settings {
-            Ok(settings) => Layout::from_settings(settings),
-            Err(_) => {
-                reader.seek(SeekFrom::Start(0))?;
-                let mut buf = String::new();
-                reader.read_to_string(&mut buf)?;
+        let layout = if let Ok(settings) = settings {
+            Layout::from_settings(settings)
+        } else {
+            reader.seek(SeekFrom::Start(0))?;
+            let mut buf = String::new();
+            reader.read_to_string(&mut buf)?;
 
-                layout::parser::parse(&buf).map_err(|_| LoadLayoutError::ParseError)?
-            }
+            layout::parser::parse(&buf).map_err(|_| LoadLayoutError::ParseError)?
         };
 
         self.layout = layout;
@@ -108,7 +109,7 @@ impl LivesplitState {
         )
     }
 
-    pub fn with_settings(settings: &crate::app_settings::Settings) -> LivesplitState {
+    pub fn with_settings(settings: &crate::app_settings::Settings) -> Self {
         let run = {
             let mut run = Run::new();
 
@@ -150,10 +151,7 @@ impl LivesplitState {
         me
     }
 
-    pub(crate) fn save_hotkeys_to_settings(
-        &self,
-        app_settings: &mut crate::app_settings::Settings,
-    ) {
+    pub const fn save_hotkeys_to_settings(&self, app_settings: &mut crate::app_settings::Settings) {
         app_settings.hkc = self.hks.config();
     }
 

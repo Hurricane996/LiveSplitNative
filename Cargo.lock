@@ -1689,6 +1689,7 @@ dependencies = [
  "dirs 6.0.0",
  "iced",
  "iced_aw",
+ "iced_table",
  "iced_widget",
  "livesplit-core",
  "rfd",
@@ -1818,6 +1819,16 @@ dependencies = [
  "iced_futures",
  "raw-window-handle",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "iced_table"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4bbbd13c56f698280e7384fa834229a2e2fbbd975dd51db97b02efe21ae37b44"
+dependencies = [
+ "iced_core",
+ "iced_widget",
 ]
 
 [[package]]
