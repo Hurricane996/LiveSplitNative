@@ -117,7 +117,6 @@ impl SplitsEditorState {
 
     pub fn update(&mut self, message: Message) {
         println!("{message:?}");
-        // todo for offset we need different code that responds to focus and blur
         match message {
             Message::UpdateGameName(new_game_name) => {
                 self.editor.as_mut().map(|x| x.set_game_name(new_game_name));
@@ -131,11 +130,11 @@ impl SplitsEditorState {
                 self.update_state();
             }
             Message::UpdateNumAttempts(new_num_attempts) => {
-                self.editor.as_mut().map(|x| {
+                if let Some(x) = self.editor.as_mut() {
                     if let Ok(num_attempts) = new_num_attempts.parse::<u32>() {
                         x.set_attempt_count(num_attempts);
                     }
-                });
+                };
                 self.update_state();
             }
             Message::UpdateOffsetBuffer(s) => self.offset_buffer = s,

@@ -53,8 +53,9 @@ enum Message {
     TryLoadLayout,
     LoadLayout(PathBuf),
     CloseRequested(window::Id),
-    OpenEditSplitsWindow,
 
+    // Splits Editing
+    OpenEditSplitsWindow,
     SplitsEditorMessage(splits_editor::Message),
 }
 
@@ -144,8 +145,6 @@ enum WindowType {
 }
 impl App {
     pub fn new() -> (Self, Task<Message>) {
-        // let mut windows = BTreeMap::default();
-
         let (main_window, window_open_task) = window::open(window::Settings {
             exit_on_close_request: false,
             ..Default::default()
@@ -260,7 +259,6 @@ impl App {
                 } = evt
                 {
                     if self.settings_window == Some(id) {
-                        // todo filter on focus
                         self.hotkey_focused.inspect(|f| {
                             self.hotkeys[*f].value =
                                 iced_key_to_livesplit_hotkey(physical_key, modifiers);
@@ -435,8 +433,6 @@ impl App {
     }
 
     async fn get_save_splits_path(ct: Option<iced::task::Handle>) -> Message {
-        // the compiler probably optimizes this nonsense out
-        // TODO probably check
         match rfd::AsyncFileDialog::new()
             //.add_filter("LiveSplit Splits Files", &["*.lss"])
             .set_title("Load splits")

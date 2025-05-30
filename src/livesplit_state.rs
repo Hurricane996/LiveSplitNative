@@ -56,8 +56,6 @@ impl LivesplitState {
             timer
                 .replace_run(run.run, true)
                 .map_err(|_| LoadSplitsError::ParseError)?;
-            // self.layout
-            // .update_state(&mut self.layout_state, &timer.snapshot());
         }
 
         Ok(())

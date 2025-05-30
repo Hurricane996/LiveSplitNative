@@ -1,8 +1,6 @@
 use iced::{Border, Length, Padding, alignment::Horizontal};
 use iced_aw::{grid, grid_row};
-use iced_widget::{
-    button, column, container, mouse_area, responsive, row, scrollable, text, text_input,
-};
+use iced_widget::{button, column, container, mouse_area, row, scrollable, text, text_input};
 use livesplit_core::run::editor::SegmentState;
 
 trait BoolAsSome {
@@ -50,7 +48,7 @@ pub fn view(app: &App) -> iced::Element<'_, crate::Message> {
     ]
     .padding(8.);
 
-    let grid = responsive(|size| {
+    let grid = {
         let column_width = Length::Fill;
 
         let header = row![
@@ -91,8 +89,7 @@ pub fn view(app: &App) -> iced::Element<'_, crate::Message> {
             },
             ..Default::default()
         })
-        .into()
-    });
+    };
 
     let buttons = column![
         button("Insert Above")

@@ -54,7 +54,6 @@ pub fn view(app: &App) -> iced::Element<'_, Message> {
         ..Default::default()
     })
     .padding(Padding::default().left(16.0).top(8.).bottom(8.));
-    // todo grid this
     container(column![hotkeys,])
         .padding(Padding::new(16.0))
         .into()
