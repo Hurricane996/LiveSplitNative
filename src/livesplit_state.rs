@@ -139,13 +139,17 @@ impl LivesplitState {
             last_rendered_width: 0,
             last_rendered_height: 0,
         };
+
+        me.renderer.render(&me.layout_state, [1920, 1080]);
+
+        settings.layout_path.as_ref().inspect(|path| {
+            me.load_layout(path).ok();
+            me.layout_state = me.layout.state(&me.timer.read().unwrap().snapshot());
+        });
+
         settings.splits_path.as_ref().inspect(|path| {
             //
             me.load_splits(path).ok();
-            me.load_splits(path).ok();
-        });
-        settings.layout_path.as_ref().inspect(|path| {
-            me.load_layout(path).ok();
         });
 
         me
