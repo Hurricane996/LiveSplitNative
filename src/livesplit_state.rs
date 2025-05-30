@@ -48,7 +48,7 @@ impl LivesplitState {
         self.renderer.render(&self.layout_state, [width, height]);
     }
 
-    pub fn load_splits(&self, path: &Path) -> Result<(), LoadSplitsError> {
+    pub fn load_splits(&mut self, path: &Path) -> Result<(), LoadSplitsError> {
         let mut timer = self.timer.write().unwrap();
         if !timer.current_phase().is_running() && !timer.current_phase().is_paused() {
             let run_bytes = fs::read(path)?;
@@ -56,6 +56,8 @@ impl LivesplitState {
             timer
                 .replace_run(run.run, true)
                 .map_err(|_| LoadSplitsError::ParseError)?;
+            // self.layout
+            // .update_state(&mut self.layout_state, &timer.snapshot());
         }
 
         Ok(())
@@ -97,7 +99,6 @@ impl LivesplitState {
         };
 
         self.layout = layout;
-        self.layout_state = self.layout.state(&self.timer.read().unwrap().snapshot());
 
         Ok(())
     }
