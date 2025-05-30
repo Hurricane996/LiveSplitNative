@@ -24,21 +24,21 @@ pub fn view(app: &App) -> iced::Element<'_, crate::Message> {
     let editor_state = app.splits_editor_state.editor_state.as_ref().unwrap();
 
     let game_tb = text_input("", &editor_state.game)
-        .on_input(|x| Message::UpdateGameName(x).to_app_message());
+        .on_input(|x| Message::UpdateGameName(x).into_app_message());
     let category_tb = text_input("", &editor_state.category)
-        .on_input(|x| Message::UpdateCategoryName(x).to_app_message());
+        .on_input(|x| Message::UpdateCategoryName(x).into_app_message());
 
     let start_timer_at_tb = text_input("", &app.splits_editor_state.offset_buffer)
-        .on_input(|x| Message::UpdateOffsetBuffer(x).to_app_message())
+        .on_input(|x| Message::UpdateOffsetBuffer(x).into_app_message())
         .wrap_focus(|f| {
             if f {
                 crate::Message::None
             } else {
-                Message::OffsetTextboxBlur.to_app_message()
+                Message::OffsetTextboxBlur.into_app_message()
             }
         });
     let attempts_tb = text_input("", &format!("{}", editor.attempt_count()))
-        .on_input(|x| Message::UpdateNumAttempts(x).to_app_message());
+        .on_input(|x| Message::UpdateNumAttempts(x).into_app_message());
 
     let game_info = grid![
         grid_row![text("Game"), text("Category")],
@@ -94,27 +94,27 @@ pub fn view(app: &App) -> iced::Element<'_, crate::Message> {
     let buttons = column![
         button("Insert Above")
             .width(Length::Fill)
-            .on_press(Message::InsertAboveClicked.to_app_message()),
+            .on_press(Message::InsertAboveClicked.into_app_message()),
         button("Insert Below")
             .width(Length::Fill)
-            .on_press(Message::InsertBelowClicked.to_app_message()),
+            .on_press(Message::InsertBelowClicked.into_app_message()),
         button("Remove Segment").width(Length::Fill).on_press_maybe(
             editor_state
                 .buttons
                 .can_remove
-                .as_some(Message::RemoveSegmentClicked.to_app_message())
+                .as_some(Message::RemoveSegmentClicked.into_app_message())
         ),
         button("Move Up").width(Length::Fill).on_press_maybe(
             editor_state
                 .buttons
                 .can_move_up
-                .as_some(Message::MoveUpClicked.to_app_message())
+                .as_some(Message::MoveUpClicked.into_app_message())
         ),
         button("Move Down").width(Length::Fill).on_press_maybe(
             editor_state
                 .buttons
                 .can_move_down
-                .as_some(Message::MoveDownClicked.to_app_message())
+                .as_some(Message::MoveDownClicked.into_app_message())
         ),
     ]
     .width(175.);
@@ -151,17 +151,17 @@ where
     };
 
     let segment_name = text_input("", &segment.name)
-        .on_input(|text| Message::UpdateSegmentName(text).to_app_message())
+        .on_input(|text| Message::UpdateSegmentName(text).into_app_message())
         .width(column_width)
         .wrap_focus(move |f| {
             if f {
-                Message::SelectRow(index).to_app_message()
+                Message::SelectRow(index).into_app_message()
             } else {
                 crate::Message::None
             }
         });
     let split_time = text_input("", &splits_editor_state.split_time_buffers[index])
-        .on_input(move |text| Message::UpdateSplitTimeBuffer(text, index).to_app_message())
+        .on_input(move |text| Message::UpdateSplitTimeBuffer(text, index).into_app_message())
         .width(column_width)
         .wrap_focus(move |f| {
             if f {
@@ -169,10 +169,10 @@ where
             } else {
                 Message::SplitTimeBlur(index)
             }
-            .to_app_message()
+            .into_app_message()
         });
     let segment_time = text_input("", &splits_editor_state.segment_time_buffers[index])
-        .on_input(move |text| Message::UpdateSegmentTimeBuffer(text, index).to_app_message())
+        .on_input(move |text| Message::UpdateSegmentTimeBuffer(text, index).into_app_message())
         .width(column_width)
         .style(segment_style)
         .wrap_focus(move |f| {
@@ -181,10 +181,10 @@ where
             } else {
                 Message::SegmentTimeBlur(index)
             }
-            .to_app_message()
+            .into_app_message()
         });
     let best_segment_time = text_input("", &splits_editor_state.best_segment_time_buffers[index])
-        .on_input(move |text| Message::UpdateBestSegmentTimeBuffer(text, index).to_app_message())
+        .on_input(move |text| Message::UpdateBestSegmentTimeBuffer(text, index).into_app_message())
         .width(column_width)
         .wrap_focus(move |f| {
             if f {
@@ -192,7 +192,7 @@ where
             } else {
                 Message::BestSegmentTimeBlur(index)
             }
-            .to_app_message()
+            .into_app_message()
         });
     mouse_area(
         container(
@@ -208,7 +208,7 @@ where
             odd_row_style
         }),
     )
-    .on_press(Message::SelectRow(index).to_app_message())
+    .on_press(Message::SelectRow(index).into_app_message())
     .into()
 }
 

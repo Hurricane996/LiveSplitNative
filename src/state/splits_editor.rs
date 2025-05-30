@@ -38,7 +38,7 @@ pub enum Message {
 }
 
 impl Message {
-    pub fn to_app_message(self) -> crate::Message {
+    pub fn into_app_message(self) -> crate::Message {
         crate::Message::SplitsEditorMessage(self)
     }
 }
@@ -119,14 +119,16 @@ impl SplitsEditorState {
         println!("{message:?}");
         match message {
             Message::UpdateGameName(new_game_name) => {
-                self.editor.as_mut().map(|x| x.set_game_name(new_game_name));
+                if let Some(x) = self.editor.as_mut() {
+                    x.set_game_name(new_game_name)
+                }
 
                 self.update_state();
             }
             Message::UpdateCategoryName(new_category_name) => {
-                self.editor
-                    .as_mut()
-                    .map(|x| x.set_category_name(new_category_name));
+                if let Some(x) = self.editor.as_mut() {
+                    x.set_category_name(new_category_name)
+                }
                 self.update_state();
             }
             Message::UpdateNumAttempts(new_num_attempts) => {
