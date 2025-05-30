@@ -1,8 +1,7 @@
 use iced::{Border, Length, Padding, alignment::Horizontal};
 use iced_aw::{grid, grid_row};
 use iced_widget::{
-    button, canvas::path::lyon_path::geom::euclid::default, column, container, mouse_area,
-    responsive, row, scrollable, text, text_input,
+    button, column, container, mouse_area, responsive, row, scrollable, text, text_input,
 };
 use livesplit_core::run::editor::SegmentState;
 
