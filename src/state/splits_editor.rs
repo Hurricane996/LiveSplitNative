@@ -1,13 +1,11 @@
-use livesplit_core::RunEditor;
+use livesplit_core::{RunEditor, run::editor};
 
 use crate::livesplit_state::LivesplitState;
 
-#[derive(Default)]
 pub struct SplitsEditorState {
     pub offset_buffer: String,
-    editor: Option<RunEditor>,
-    pub editor_state: Option<livesplit_core::run::editor::State>,
-
+    pub editor: RunEditor,
+    pub editor_state: livesplit_core::run::editor::State,
     pub segment_time_buffers: Vec<String>,
     pub split_time_buffers: Vec<String>,
     pub best_segment_time_buffers: Vec<String>,
@@ -42,147 +40,110 @@ impl Message {
         crate::Message::SplitsEditorMessage(self)
     }
 }
-
+// Safety: This entire impl block is spaghetti of unsafe unwraps, which needs fixed. However, none of this spaghetti
+// leaks into the public so until we fix it, just tread lightly when updating this.
 impl SplitsEditorState {
-    pub fn open_window(&mut self, livesplit_state: &mut LivesplitState) {
+    pub fn new(livesplit_state: &mut LivesplitState) -> Self {
         let run = {
-            let timer = livesplit_state.timer.read().unwrap();
+            let timer = livesplit_state.timer.read().expect("Timer lock poisoned!");
 
             timer.run().clone()
         };
+        let mut editor = RunEditor::new(run).unwrap();
+        let editor_state = editor.state();
 
-        self.editor = Some(RunEditor::new(run).unwrap());
+        let mut me = Self {
+            offset_buffer: String::new(),
+            editor,
+            editor_state,
+            segment_time_buffers: vec![],
+            split_time_buffers: vec![],
+            best_segment_time_buffers: vec![],
+        };
 
-        self.update_state();
+        me.offset_buffer = me.editor.state().offset.clone();
+        me.update_buffers();
 
-        self.offset_buffer = self.editor_state.as_mut().unwrap().offset.clone();
-
-        self.update_buffers();
+        me
     }
 
-    pub fn update_state(&mut self) {
-        self.editor_state = Some(self.editor.as_mut().unwrap().state())
+    // SAFETY: this should only be called if editor_state is known to be Some
+
+    fn update_buffers_for_row(&mut self, idx: usize, state: &editor::State) {
+        self.split_time_buffers[idx] = state.segments[idx].split_time.clone();
+        // this code is not panic safe unless documented contract is followed
+        self.segment_time_buffers[idx] = state.segments[idx].segment_time.clone();
+        // this code is not panic safe unless documented contract is followed
+        self.best_segment_time_buffers[idx] = state.segments[idx].best_segment_time.clone();
     }
 
-    pub fn update_buffers_for_row(&mut self, idx: usize) {
-        println!("Fixing buffers for {idx}");
-        self.split_time_buffers[idx] = self.editor_state.as_mut().unwrap().segments[idx]
-            .split_time
-            .clone();
-        self.segment_time_buffers[idx] = self.editor_state.as_mut().unwrap().segments[idx]
-            .segment_time
-            .clone();
+    // SAFETY: this should only be called if editor_state is known to be Some
+    fn update_buffers(&mut self) {
+        let state = self.editor.state();
 
-        self.best_segment_time_buffers[idx] = self.editor_state.as_mut().unwrap().segments[idx]
-            .best_segment_time
-            .clone();
-    }
-
-    pub fn update_buffers(&mut self) {
-        let num_rows = self.editor_state.as_ref().unwrap().segments.len();
+        let num_rows = state.segments.len();
 
         self.split_time_buffers = vec![String::new(); num_rows];
         self.segment_time_buffers = vec![String::new(); num_rows];
         self.best_segment_time_buffers = vec![String::new(); num_rows];
 
         for idx in 0..num_rows {
-            self.update_buffers_for_row(idx);
+            // Safety: if editor_state was none we would have thrown earlier in the function
+            self.update_buffers_for_row(idx, &state);
         }
     }
-    pub fn close_window(&mut self, livesplit_state: &mut LivesplitState) {
-        // todo don't auto_apply
+    pub fn close_window(mut self, livesplit_state: &mut LivesplitState) {
+        // todo don't auto apply
 
-        self.editor
-            .as_mut()
-            .unwrap()
-            .parse_and_set_offset(&self.offset_buffer)
-            .ok();
+        self.editor.parse_and_set_offset(&self.offset_buffer).ok();
 
-        if let Some(run) = self.editor.take().map(RunEditor::close) {
-            let mut timer = livesplit_state.timer.write().unwrap();
-            timer.replace_run(run, false).ok();
-        }
-        self.editor = None;
-        self.editor_state = None;
-    }
+        let run = self.editor.close();
 
-    pub fn editor(&self) -> Option<&RunEditor> {
-        self.editor.as_ref()
-    }
-
-    #[allow(unused)]
-    pub fn editor_mut(&mut self) -> Option<&mut RunEditor> {
-        self.editor.as_mut()
+        let mut timer = livesplit_state.timer.write().expect("Timer lock poisoned!");
+        timer.replace_run(run, false).ok();
     }
 
     pub fn update(&mut self, message: Message) {
         println!("{message:?}");
         match message {
             Message::UpdateGameName(new_game_name) => {
-                if let Some(x) = self.editor.as_mut() {
-                    x.set_game_name(new_game_name)
-                }
-
-                self.update_state();
+                self.editor.set_game_name(new_game_name);
             }
             Message::UpdateCategoryName(new_category_name) => {
-                if let Some(x) = self.editor.as_mut() {
-                    x.set_category_name(new_category_name)
-                }
-                self.update_state();
+                self.editor.set_category_name(new_category_name);
             }
             Message::UpdateNumAttempts(new_num_attempts) => {
-                if let Some(x) = self.editor.as_mut() {
-                    if let Ok(num_attempts) = new_num_attempts.parse::<u32>() {
-                        x.set_attempt_count(num_attempts);
-                    }
-                };
-                self.update_state();
+                if let Ok(num_attempts) = new_num_attempts.parse::<u32>() {
+                    self.editor.set_attempt_count(num_attempts);
+                }
             }
             Message::UpdateOffsetBuffer(s) => self.offset_buffer = s,
             Message::OffsetTextboxBlur => {
-                match self
-                    .editor
-                    .as_mut()
-                    .unwrap()
-                    .parse_and_set_offset(&self.offset_buffer)
-                {
+                match self.editor.parse_and_set_offset(&self.offset_buffer) {
                     Ok(_) => {}
-                    Err(_) => self.offset_buffer = self.editor.as_mut().unwrap().state().offset,
+                    Err(_) => self.offset_buffer = self.editor.state().offset,
                 };
-
-                self.update_state();
             }
             Message::SelectRow(row) => {
                 println!("row {row} selected");
-                self.editor.as_mut().unwrap().select_only(row);
-                self.update_state();
+                self.editor.select_only(row);
             }
             Message::UpdateSegmentName(new_name) => {
-                self.editor
-                    .as_mut()
-                    .unwrap()
-                    .active_segment()
-                    .set_name(new_name);
-                self.update_state();
+                self.editor.active_segment().set_name(new_name);
             }
             Message::SplitTimeBlur(_idx) => {
-                self.update_state();
                 self.update_buffers();
             }
             Message::SegmentTimeBlur(_idx) => {
-                self.update_state();
                 self.update_buffers();
             }
             Message::BestSegmentTimeBlur(idx) => {
-                self.update_state();
-                self.update_buffers_for_row(idx);
+                let state = self.editor.state();
+                self.update_buffers_for_row(idx, &state);
             }
             Message::UpdateSplitTimeBuffer(text, idx) => {
                 self.split_time_buffers[idx] = text.clone();
                 self.editor
-                    .as_mut()
-                    .unwrap()
                     .active_segment()
                     .parse_and_set_split_time(&self.split_time_buffers[idx])
                     .ok();
@@ -190,8 +151,6 @@ impl SplitsEditorState {
             Message::UpdateSegmentTimeBuffer(text, idx) => {
                 self.segment_time_buffers[idx] = text;
                 self.editor
-                    .as_mut()
-                    .unwrap()
                     .active_segment()
                     .parse_and_set_segment_time(&self.segment_time_buffers[idx])
                     .ok();
@@ -199,37 +158,31 @@ impl SplitsEditorState {
             Message::UpdateBestSegmentTimeBuffer(text, idx) => {
                 self.best_segment_time_buffers[idx] = text;
                 self.editor
-                    .as_mut()
-                    .unwrap()
                     .active_segment()
                     .parse_and_set_best_segment_time(&self.best_segment_time_buffers[idx])
                     .ok();
             }
             Message::InsertAboveClicked => {
-                self.editor.as_mut().unwrap().insert_segment_above();
-                self.update_state();
+                self.editor.insert_segment_above();
                 self.update_buffers();
             }
             Message::InsertBelowClicked => {
-                self.editor.as_mut().unwrap().insert_segment_below();
-                self.update_state();
+                self.editor.insert_segment_below();
                 self.update_buffers();
             }
             Message::RemoveSegmentClicked => {
-                self.editor.as_mut().unwrap().remove_segments();
-                self.update_state();
+                self.editor.remove_segments();
                 self.update_buffers();
             }
             Message::MoveUpClicked => {
-                self.editor.as_mut().unwrap().move_segments_up();
-                self.update_state();
+                self.editor.move_segments_up();
                 self.update_buffers();
             }
             Message::MoveDownClicked => {
-                self.editor.as_mut().unwrap().move_segments_down();
-                self.update_state();
+                self.editor.move_segments_down();
                 self.update_buffers();
             }
         }
+        self.editor_state = self.editor.state();
     }
 }

@@ -40,7 +40,10 @@ impl LivesplitState {
         }
         self.layout.update_state(
             &mut self.layout_state,
-            &self.timer.read().unwrap().snapshot(),
+            // SAFETY: there are only two threads in this program - ours and the hotkey system.
+            // Theoretically the hotkey system *could* panic mid-run, but that is
+            // so unlikely that I don't care to recover from it.
+            &self.timer.read().expect("Timer lock poisoned!").snapshot(),
         );
 
         self.last_rendered_width = width;
@@ -49,10 +52,11 @@ impl LivesplitState {
     }
 
     pub fn load_splits(&mut self, path: &Path) -> Result<(), LoadSplitsError> {
-        let mut timer = self.timer.write().unwrap();
+        let mut timer = self.timer.write().expect("Timer lock poisoned!");
         if !timer.current_phase().is_running() && !timer.current_phase().is_paused() {
             let run_bytes = fs::read(path)?;
-            let run = composite::parse_and_fix(&run_bytes, path.parent()).unwrap();
+            let run = composite::parse_and_fix(&run_bytes, path.parent())
+                .map_err(|_| LoadSplitsError::ParseError)?;
             timer
                 .replace_run(run.run, true)
                 .map_err(|_| LoadSplitsError::ParseError)?;
@@ -62,7 +66,7 @@ impl LivesplitState {
     }
 
     pub fn save_splits(&self, path: &Path) -> Result<(), SaveSplitsError> {
-        let mut timer = self.timer.write().unwrap();
+        let mut timer = self.timer.write().expect("Timer lock poisoned!");
 
         timer.mark_as_unmodified();
 
@@ -79,7 +83,11 @@ impl LivesplitState {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.timer.read().unwrap().run().has_been_modified()
+        self.timer
+            .read()
+            .expect("Timer lock poisoned!")
+            .run()
+            .has_been_modified()
     }
 
     pub fn load_layout(&mut self, path: &std::path::Path) -> Result<(), LoadLayoutError> {
@@ -103,7 +111,10 @@ impl LivesplitState {
 
     pub fn is_timer_mid_run(&self) -> bool {
         matches!(
-            self.timer.read().unwrap().current_phase(),
+            self.timer
+                .read()
+                .expect("Timer lock poisoned!")
+                .current_phase(),
             TimerPhase::Running | TimerPhase::Paused
         )
     }
@@ -119,6 +130,7 @@ impl LivesplitState {
             run
         };
 
+        // SAFETY: we know this is safe because the run is guaranteed valid - we constructed it ourselves
         let timer = Timer::new(run).unwrap();
 
         let mut layout = Layout::default_layout();
@@ -126,7 +138,13 @@ impl LivesplitState {
         let layout_state = layout.state(&timer.snapshot());
         let timer = timer.into_shared();
 
-        let hks = HotkeySystem::with_config(timer.clone(), settings.hkc).unwrap();
+        // The hotkey system can fail to initialize if multiple keys are set the same in the configuration.
+        // Unfortunately, as the current system is designed upstream, we have no platform-independent way to
+        // detect this and tell the difference between that and an actual panic-worthy failure.
+        // Fortunately, in order for this to happen the user would have to manually edit the config file, and
+        // if they are doing that they are living in a state of sin and deserve what happens to them
+        let hks = HotkeySystem::with_config(timer.clone(), settings.hkc)
+            .expect("Failed to initialize hotkey system");
 
         let mut me = Self {
             renderer: Renderer::new(),
@@ -143,7 +161,9 @@ impl LivesplitState {
 
         settings.layout_path.as_ref().inspect(|path| {
             me.load_layout(path).ok();
-            me.layout_state = me.layout.state(&me.timer.read().unwrap().snapshot());
+            me.layout_state = me
+                .layout
+                .state(&me.timer.read().expect("Timer lock poisoned!").snapshot());
         });
 
         settings.splits_path.as_ref().inspect(|path| {
@@ -158,12 +178,12 @@ impl LivesplitState {
         app_settings.hkc = self.hks.config();
     }
 
-    pub fn disable_hotkeys(&mut self) {
-        self.hks.deactivate().unwrap();
+    pub fn disable_hotkeys(&mut self) -> std::result::Result<(), livesplit_core::hotkey::Error> {
+        self.hks.deactivate()
     }
 
-    pub fn enable_hotkeys(&mut self) {
-        self.hks.activate().unwrap();
+    pub fn enable_hotkeys(&mut self) -> std::result::Result<(), livesplit_core::hotkey::Error> {
+        self.hks.activate()
     }
 }
 

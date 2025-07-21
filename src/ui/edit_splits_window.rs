@@ -19,16 +19,19 @@ use crate::{
 };
 
 pub fn view(app: &App) -> iced::Element<'_, crate::Message> {
-    let editor = app.splits_editor_state.editor().unwrap();
+    let splits_editor_state = app
+        .splits_editor_state
+        .as_ref()
+        .expect("Tried to draw edit splits window with no splits editor");
 
-    let editor_state = app.splits_editor_state.editor_state.as_ref().unwrap();
+    let editor_state = &splits_editor_state.editor_state;
 
     let game_tb = text_input("", &editor_state.game)
         .on_input(|x| Message::UpdateGameName(x).into_app_message());
     let category_tb = text_input("", &editor_state.category)
         .on_input(|x| Message::UpdateCategoryName(x).into_app_message());
 
-    let start_timer_at_tb = text_input("", &app.splits_editor_state.offset_buffer)
+    let start_timer_at_tb = text_input("", &splits_editor_state.offset_buffer)
         .on_input(|x| Message::UpdateOffsetBuffer(x).into_app_message())
         .wrap_focus(|f| {
             if f {
@@ -37,8 +40,11 @@ pub fn view(app: &App) -> iced::Element<'_, crate::Message> {
                 Message::OffsetTextboxBlur.into_app_message()
             }
         });
-    let attempts_tb = text_input("", &format!("{}", editor.attempt_count()))
-        .on_input(|x| Message::UpdateNumAttempts(x).into_app_message());
+    let attempts_tb = text_input(
+        "",
+        &format!("{}", splits_editor_state.editor.attempt_count()),
+    )
+    .on_input(|x| Message::UpdateNumAttempts(x).into_app_message());
 
     let game_info = grid![
         grid_row![text("Game"), text("Category")],
@@ -69,7 +75,7 @@ pub fn view(app: &App) -> iced::Element<'_, crate::Message> {
         container(column![
             header,
             scrollable(column(editor_state.segments.iter().enumerate().map(
-                |(idx, segment)| table_row(idx, segment, column_width, &app.splits_editor_state)
+                |(idx, segment)| table_row(idx, segment, column_width, &splits_editor_state)
             )))
             .style(|t, s| {
                 let mut s = scrollable::default(t, s);

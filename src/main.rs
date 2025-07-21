@@ -57,6 +57,9 @@ enum Message {
     // Splits Editing
     OpenEditSplitsWindow,
     SplitsEditorMessage(splits_editor::Message),
+
+    // Error
+    ErrorOccurred { title: String, error: String },
 }
 
 pub struct HotkeyBox {
@@ -84,7 +87,10 @@ pub const fn load_hotkeys_from_hks(livesplit_state: &LivesplitState, hotkeys: &m
     hotkeys[8].value = config.toggle_timing_method;
 }
 
-pub fn save_hotkeys_to_hks(livesplit_state: &mut LivesplitState, hotkeys: &[HotkeyBox; 9]) {
+pub fn save_hotkeys_to_hks(
+    livesplit_state: &mut LivesplitState,
+    hotkeys: &[HotkeyBox; 9],
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut config = livesplit_state.hks.config();
 
     config.split = hotkeys[0].value;
@@ -99,25 +105,20 @@ pub fn save_hotkeys_to_hks(livesplit_state: &mut LivesplitState, hotkeys: &[Hotk
 
     // first clear the config so that we don't get false duplicate errors
 
-    livesplit_state
-        .hks
-        .set_config(HotkeyConfig {
-            split: None,
-            reset: None,
-            undo: None,
-            skip: None,
-            pause: None,
-            undo_all_pauses: None,
-            previous_comparison: None,
-            next_comparison: None,
-            toggle_timing_method: None,
-        })
-        .expect("Failed to save config");
+    livesplit_state.hks.set_config(HotkeyConfig {
+        split: None,
+        reset: None,
+        undo: None,
+        skip: None,
+        pause: None,
+        undo_all_pauses: None,
+        previous_comparison: None,
+        next_comparison: None,
+        toggle_timing_method: None,
+    })?;
 
-    livesplit_state
-        .hks
-        .set_config(config)
-        .expect("Failed to save config");
+    livesplit_state.hks.set_config(config)?;
+    Ok(())
 }
 
 struct App {
@@ -132,7 +133,7 @@ struct App {
 
     livesplit_state: LivesplitState,
 
-    splits_editor_state: SplitsEditorState,
+    splits_editor_state: Option<SplitsEditorState>,
 
     hotkeys: [HotkeyBox; 9],
     hotkey_focused: Option<usize>,
@@ -160,7 +161,7 @@ impl App {
                 main_window_width: 0,
                 main_window_height: 0,
                 livesplit_state: LivesplitState::with_settings(&settings),
-                splits_editor_state: SplitsEditorState::default(),
+                splits_editor_state: None,
                 settings,
 
                 hotkeys: [
@@ -204,23 +205,21 @@ impl App {
                     .update(self.main_window_width, self.main_window_height);
             }
             Message::OpenEditSplitsWindow => {
+                self.livesplit_state.disable_hotkeys().ok();
+
                 let (id, window_task) = window::open(window::Settings::default());
 
                 self.edit_splits_window = Some(id);
 
-                self.livesplit_state.disable_hotkeys();
-
-                self.splits_editor_state
-                    .open_window(&mut self.livesplit_state);
-
+                self.splits_editor_state = Some(SplitsEditorState::new(&mut self.livesplit_state));
                 return window_task.discard();
             }
             Message::OpenSettingsWindow => {
+                self.livesplit_state.disable_hotkeys().ok();
+
                 let (id, window_task) = window::open(window::Settings::default());
 
                 self.settings_window = Some(id);
-
-                self.livesplit_state.disable_hotkeys();
 
                 load_hotkeys_from_hks(&self.livesplit_state, &mut self.hotkeys);
                 return window_task.discard();
@@ -229,25 +228,38 @@ impl App {
                 load_hotkeys_from_hks(&self.livesplit_state, &mut self.hotkeys);
             }
             Message::SaveHotkeys => {
-                save_hotkeys_to_hks(&mut self.livesplit_state, &self.hotkeys);
+                if let Err(e) = save_hotkeys_to_hks(&mut self.livesplit_state, &self.hotkeys) {
+                    return Task::done(Message::ErrorOccurred {
+                        title: "Failed to update hotkeys".to_owned(),
+                        error: e.to_string(),
+                    });
+                };
                 self.livesplit_state
                     .save_hotkeys_to_settings(&mut self.settings);
             }
             Message::WindowClosed(window) => match self.identify_window(window) {
                 WindowType::Main => {
-                    self.settings.save();
+                    // the window is already closed - we can't do anything about this
+                    self.settings.save().ok();
                     return iced::exit();
                 }
                 WindowType::Settings => {
                     self.settings_window = None;
                     self.hotkey_focused = None;
-                    self.livesplit_state.enable_hotkeys();
+
+                    if let Err(e) = self.livesplit_state.enable_hotkeys() {
+                        return Task::done(Message::ErrorOccurred {
+                            title: "Failed to re-enable hotkeys".to_owned(),
+                            error: e.to_string(),
+                        });
+                    };
                 }
                 WindowType::EditSplits => {
                     self.edit_splits_window = None;
 
-                    self.splits_editor_state
-                        .close_window(&mut self.livesplit_state);
+                    if let Some(splits_editor_state) = self.splits_editor_state.take() {
+                        splits_editor_state.close_window(&mut self.livesplit_state);
+                    }
                 }
                 WindowType::Untracked => panic!("Tried to close untracked window"),
             },
@@ -288,15 +300,10 @@ impl App {
             }
             Message::LoadSplits(path) => {
                 if let Err(e) = self.livesplit_state.load_splits(&path) {
-                    return Task::future(
-                        rfd::AsyncMessageDialog::new()
-                            .set_level(rfd::MessageLevel::Error)
-                            .set_title("Failed to load splits")
-                            .set_description(format!("Failed to load splits, got error {e}"))
-                            .set_buttons(rfd::MessageButtons::Ok)
-                            .show(),
-                    )
-                    .discard();
+                    return Task::done(Message::ErrorOccurred {
+                        title: "Failed to load splits".to_owned(),
+                        error: e.to_string(),
+                    });
                 }
                 self.settings.splits_path.replace(path);
             }
@@ -307,15 +314,10 @@ impl App {
                 println!("Saving splits!");
 
                 if let Err(e) = self.livesplit_state.save_splits(&path) {
-                    return Task::future(
-                        rfd::AsyncMessageDialog::new()
-                            .set_level(rfd::MessageLevel::Error)
-                            .set_title("Failed to save splits")
-                            .set_description(format!("Failed to save splits, got error {e}"))
-                            .set_buttons(rfd::MessageButtons::Ok)
-                            .show(),
-                    )
-                    .discard();
+                    return Task::done(Message::ErrorOccurred {
+                        title: "Failed to save splits".to_owned(),
+                        error: e.to_string(),
+                    });
                 }
             }
             Message::TryLoadLayout => {
@@ -333,15 +335,10 @@ impl App {
             }
             Message::LoadLayout(path) => {
                 if let Err(e) = self.livesplit_state.load_layout(&path) {
-                    return Task::future(
-                        rfd::AsyncMessageDialog::new()
-                            .set_level(rfd::MessageLevel::Error)
-                            .set_title("Failed to load layout")
-                            .set_description(format!("Failed to load layout, got error {e}"))
-                            .set_buttons(rfd::MessageButtons::Ok)
-                            .show(),
-                    )
-                    .discard();
+                    return Task::done(Message::ErrorOccurred {
+                        title: "Failed to load layout".to_owned(),
+                        error: e.to_string(),
+                    });
                 }
                 self.settings.layout_path.replace(path);
             }
@@ -358,18 +355,18 @@ impl App {
 
                     let timer_running_task = if self.livesplit_state.is_timer_mid_run() {
                         Task::future(async move {
-                                    if  MessageDialogResult::No == AsyncMessageDialog::new()
-                                        .set_buttons(rfd::MessageButtons::YesNo)
-                                        .set_title("Quit?")
-                                        .set_description(
-                                            "The timer is currently running. Are you sure you want to quit?",
-                                        )
-                                        .show()
-                                        .await
-                                    {
-                                            ct.abort();
-                                    }
-                                }).discard()
+                                            if  MessageDialogResult::No == AsyncMessageDialog::new()
+                                                .set_buttons(rfd::MessageButtons::YesNo)
+                                                .set_title("Quit?")
+                                                .set_description(
+                                                    "The timer is currently running. Are you sure you want to quit?",
+                                                )
+                                                .show()
+                                                .await
+                                            {
+                                                    ct.abort();
+                                            }
+                                        }).discard()
                     } else {
                         Task::none()
                     };
@@ -379,7 +376,22 @@ impl App {
 
                 panic!("Tried to close untracked window")
             }
-            Message::SplitsEditorMessage(message) => self.splits_editor_state.update(message),
+            Message::SplitsEditorMessage(message) => self
+                .splits_editor_state
+                .as_mut()
+                .expect("Recieved a splits editor messagge when the splits editor was closed")
+                .update(message),
+            Message::ErrorOccurred { title, error } => {
+                return Task::future(
+                    rfd::AsyncMessageDialog::new()
+                        .set_level(rfd::MessageLevel::Error)
+                        .set_title(title)
+                        .set_description(error)
+                        .set_buttons(rfd::MessageButtons::Ok)
+                        .show(),
+                )
+                .discard();
+            }
         }
 
         Task::none()
