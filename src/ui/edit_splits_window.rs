@@ -75,7 +75,7 @@ pub fn view(app: &App) -> iced::Element<'_, crate::Message> {
         container(column![
             header,
             scrollable(column(editor_state.segments.iter().enumerate().map(
-                |(idx, segment)| table_row(idx, segment, column_width, &splits_editor_state)
+                |(idx, segment)| table_row(idx, segment, column_width, splits_editor_state)
             )))
             .style(|t, s| {
                 let mut s = scrollable::default(t, s);
